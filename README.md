@@ -6,6 +6,8 @@
 
 Use guld-cli to auto-generate a CLI for your project, or to browse snobjects on the fly.
 
+### Direct Usage
+
 The `guld-cli` command will read in a snobject schema and generate a CLI at runtime. Either run the command from a snobject directory or pass in the `-s` or `--snobject` option.
 
 ```
@@ -41,3 +43,21 @@ Options:
 ```
 
 The example above is for [sno-person](https://github.com/isysd/sno-person).
+
+### Generate a Custom CLI
+
+It couldn't be easier to create a custom CLI for your snobject. If you have [snopack](https://github.com/isysd/sno-pack), then run this command from your project directory.
+
+```
+snopack build-cli
+```
+
+Alternately, if you don't want to install snopack, you can create a CLI in a few simple lines of code.
+
+```
+#!/usr/bin/env node
+var pickCommand = require('guld-cli').pickCommand
+// Bootstrap the --snobject option with a path to your project dir
+var relpath = require('path').join(__dirname, '../')
+pickCommand(process.argv.slice(0, 2).concat('-s', relpath).concat(process.argv.slice(2, process.argv.length)))
+```

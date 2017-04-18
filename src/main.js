@@ -1,22 +1,22 @@
 var fs = require('fs')
 var path = require('path')
-var Ajv = require('ajv')
 var Command = require('commander').Command
 var Snobject = require('snobject')
 var _ = require('lodash')
-var ajv = new Ajv()
-var snobject = Snobject(null, null, ajv)
+var Ajv = require('ajv')
+// var ajv = new Ajv()
 
-var pickCommand = function (args) {
+var pickCommand = function (args, ajv) {
+  if (!ajv) ajv = new Ajv()
   var cmd = new Command('guld-cli')
   cmd
-    .version('0.0.1')
+    .version('0.0.3')
     .option('-s --snobject <snobject>', 'The path to a snobject package, defaults to current directory.')
      .parse(args.slice(0, 4))
   if (!cmd.snobject) {
-    cmd.snobject = '.'
+    cmd.snobject = process.cwd()
   } else {
-    args = args.splice(0, 2).concat(args.splice(2, args.length))
+    args = args.slice(0, 2).concat(args.slice(4, args.length))
   }
   fs.readFile(path.normalize(path.join(cmd.snobject, 'package.json')), function (err, data) {
     if (err) {
@@ -26,7 +26,8 @@ var pickCommand = function (args) {
       var pdata = JSON.parse(data.toString('utf-8'))
       var main = pdata['main']
       if (!pdata.dependencies.hasOwnProperty('snobject') || pdata.name === 'guld-cli') cmd.help()
-      var Sno = require(path.normalize(path.join(cmd.snobject, main)))
+      if (main[0] !== '/' && main[0] !== '.') main = './' + main
+      var Sno = require(path.resolve(path.normalize(path.join(cmd.snobject, main))))
       // create an instance to act on and load schemas
       var sno = Sno(null, null, ajv)
       var snot = sno.getSchema().title
@@ -34,26 +35,25 @@ var pickCommand = function (args) {
       var scmd = cmd
         .command(kt)
       if (snot !== kt) scmd.alias(snot)
-      snoCommand(sno, scmd, args)
+      snoCommand(sno, scmd, args, ajv)
     }
   })
 }
 
-function snoCommand (sno, scmd, args) {
+function snoCommand (sno, scmd, args, ajv) {
   var schema = sno.getSchema()
   if (!schema) scmd.help()
   // load our top level snobject data into the command
   scmd
     .version(sno.version)
     .description(schema.description)
-
   for (var prop in schema.properties) {
-    var property = resolveProp(schema.properties[prop])
+    var property = resolveProp(schema.properties[prop], ajv)
     //  TODO check if property is a snobject and call snoCommand
     // check if property is a method
-    if (property.definitions && property.definitions.request && property.definitions.response) {
-      var request = resolveProp(property.definitions.request)
-      var response = resolveProp(property.definitions.response)
+    if (property && property.definitions && property.definitions.request && property.definitions.response) {
+      var request = resolveProp(property.definitions.request, ajv)
+      var response = resolveProp(property.definitions.response, ajv)
       // create a method command
       var kt = _.kebabCase(property.title)
       var mcmd = scmd
@@ -63,18 +63,18 @@ function snoCommand (sno, scmd, args) {
         .action(function (options) {
           var toPass = {}
           var called = ajv.getSchema(options.method).schema
-          request = resolveProp(called.definitions.request)
-          response = resolveProp(called.definitions.response)
-          if (response.title.indexOf('Callback') >= 0) {
-            toPass = filterArgs(options, request)
-            if (ajv.validate(request.id, toPass)) {
+          request = resolveProp(called.definitions.request, ajv)
+          response = resolveProp(called.definitions.response, ajv)
+          if (response.title && response.title.indexOf('Callback') >= 0) {
+            toPass = filterArgs(options, request, ajv)
+            if (request.type === 'null' || ajv.validate(request.id, toPass)) {
               if (request.type === 'null') sno[called.title](responseHandler)
               else if (request.type === 'object') sno[called.title](toPass, responseHandler)
             } else {
               console.error('Invalid request ' + request.id)
             }
           } else {
-            toPass = filterArgs(options, request)
+            toPass = filterArgs(options, request, ajv)
             if (request.type === 'null') responseHandler(null, sno[called.title]())
             else if (request.type === 'object') {
               try {
@@ -88,24 +88,23 @@ function snoCommand (sno, scmd, args) {
       if (property.title !== kt) mcmd.alias(property.title)
       if (request && request.hasOwnProperty('properties')) {
         for (var mprop in request.properties) {
-          var mproperty = resolveProp(request.properties[mprop])
+          var mproperty = resolveProp(request.properties[mprop], ajv)
           if (mproperty) {
             if (mproperty.hasOwnProperty('properties')) {
             } else {
-              snoMethod(mproperty, mcmd)
+              var wait = snoMethod(mproperty, mcmd)
             }
           }
         }
       } else {
-        snoMethod(request, mcmd)
+        var wait = snoMethod(request, mcmd)
       }
     }
   }
-
   scmd.parse(args)
 }
 
-function filterArgs (args, request) {
+function filterArgs (args, request, ajv) {
   var toPass = {}
   for (var oprop in args) {
     if (request && request.properties && request.properties.hasOwnProperty(oprop)) {
@@ -143,7 +142,7 @@ function snoMethod (prop, mcmd) {
   // TODO other types? coerce?
 }
 
-function resolveProp (s) {
+function resolveProp (s, ajv) {
   var property
   if (s.$ref) {
     // ajv should have it from the snobject init
@@ -153,4 +152,4 @@ function resolveProp (s) {
   return property
 }
 
-module.exports = {'pickCommand': pickCommand}
+module.exports = {'pickCommand': pickCommand, 'snoCommand': snoCommand}
