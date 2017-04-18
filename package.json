@@ -29,6 +29,6 @@
     "url": "https://github.com/guldcoin/guld-cli/issues"
   },
   "homepage": "https://github.com/guldcoin/guld-cli",
-  "bin" : { "guld-cli" : "./src/cli.js" },
+  "bin" : { "guld-cli" : "./bin/cli.js" },
   "preferGlobal": true
 }
